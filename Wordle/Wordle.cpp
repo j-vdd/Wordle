@@ -28,7 +28,7 @@ int main() {
 
 	string line;
 
-	// old: 1:15
+	// old: 1:08
 
 	int idx = 0;
 	while (getline(stream, line)) {

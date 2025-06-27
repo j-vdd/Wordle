@@ -56,21 +56,15 @@ public:
 		random_device r;
 		engine = default_random_engine(r());
 		wordDistrib = uniform_int_distribution<int>(0, wordList.size() - 1);
-
-		auto uniformDistrib = uniform_real_distribution<double>(0, 1);
-		for (int i = 0; i < wordList.size(); i++) {
-			wordStages.push_back(uniformDistrib(r));
-		}
 	}
 
 	// Calculates the 'interior' of a state
-	State simplify(const State& state, vector<int>& possibleSecrets, double stage = 1.0) {
+	State simplify(const State& state, vector<int>& possibleSecrets) {
 		State result;
 		for (int i = 0; i < wordStates.size(); i++) {
 			const State& wordState = wordStates[i];
 			if ((state & wordState) == wordState) {
-				if (wordStages[i] <= stage)
-					possibleSecrets.push_back(i);
+				possibleSecrets.push_back(i);
 
 				result |= wordState;
 			}
@@ -151,24 +145,17 @@ public:
 		return result;
 	}
 
-	pair<double, int> search(double stage, State curState, int guessCount, const vector<vector<State>>& afterGuesses, unordered_map<pair<State, int>, tuple<double, int, double>, hash_pair>& table, bool log = false) {
-		int bestPrev = -1;
+	pair<double, int> search(State curState, int guessCount, const vector<vector<State>>& afterGuesses, unordered_map<pair<State, int>, tuple<double, int>, hash_pair>& table, bool log = false) {
 		if (table.count({ curState, guessCount })) {
-			const auto& [entryExpected, entryBest, entryStage] = table.at({curState, guessCount});
-			if (entryStage == stage)
-				return { entryExpected, entryBest };
-			else
-				bestPrev = entryBest;
+			const auto& [entryExpected, entryBest] = table.at({curState, guessCount});
+			return { entryExpected, entryBest };
 		}
 
 		vector<int> possibleSecrets;
-		curState = simplify(curState, possibleSecrets, stage);
+		curState = simplify(curState, possibleSecrets);
 		if (table.count({ curState, guessCount })) {
-			const auto& [entryExpected, entryBest, entryStage] = table.at({ curState, guessCount });
-			if (entryStage == stage)
-				return { entryExpected, entryBest };
-			else
-				bestPrev = entryBest;
+			const auto& [entryExpected, entryBest] = table.at({ curState, guessCount });
+			return { entryExpected, entryBest };
 		}
 
 		if (possibleSecrets.size() == 0) {
@@ -176,29 +163,21 @@ public:
 			return { 7, -1 };
 		}
 		if (possibleSecrets.size() == 1) {
-			table[{curState, guessCount}] = { guessCount + 1, possibleSecrets[0], stage };
+			table[{curState, guessCount}] = { guessCount + 1, possibleSecrets[0] };
 			return { guessCount + 1, possibleSecrets[0] };
 		}
 		if (possibleSecrets.size() == 2) {
-			table[{curState, guessCount}] = { (double)guessCount + 1.5, possibleSecrets[0], stage };
+			table[{curState, guessCount}] = { (double)guessCount + 1.5, possibleSecrets[0] };
 			return { (double)guessCount + 1.5, possibleSecrets[0] };
 		}
 
 		if (guessCount == 5) {
-			table[{curState, guessCount}] = { 7, -1, stage };
+			table[{curState, guessCount}] = { 7, -1 };
 			return { 7, -1 };
 		}
 
 		vector<pair<double, int>> possibleGuesses;
 		for (int i = 0; i < wordList.size(); i++) {
-			if (wordStages[i] > stage)
-				continue;
-
-			if (i == bestPrev) {
-				possibleGuesses.push_back({ -1.0, i });
-				continue;
-			}
-
 			bool containsGuess = false;
 			unordered_map<State, int> frequencies;
 			for (int secretIdx : possibleSecrets) {
@@ -252,7 +231,7 @@ public:
 
 				pair<double, int> childResult = secretIdx == guessIdx ? 
 					pair<double, int>{guessCount + 1, guessIdx} : 
-					search(stage, curState & afterGuess, guessCount + 1, afterGuesses, table);
+					search(curState & afterGuess, guessCount + 1, afterGuesses, table);
 
 				if (childResult.second == -1) {
 					success = false;
@@ -276,7 +255,7 @@ public:
 				break;
 		}
 
-		table[{curState, guessCount}] = { result.first, result.second, stage };
+		table[{curState, guessCount}] = { result.first, result.second };
 		return result;
 	}
 
@@ -305,17 +284,9 @@ public:
 			}
 		}
 
-		unordered_map<pair<State, int>, tuple<double, int, double>, hash_pair> table;
+		unordered_map<pair<State, int>, tuple<double, int>, hash_pair> table;
 
-
-		/*for (double stage = 0.2; stage < 1.0; stage += 0.2) {
-			cout << "Stage: " << stage << endl;
-			search(stage, curState, guesses.size(), afterGuesses, table, true);
-		}*/
-
-		cout << "Stage: 1.0" << endl;
-		auto result = search(1.0, curState, guesses.size(), afterGuesses, table, true);
-
+		auto result = search(curState, guesses.size(), afterGuesses, table, true);
 		cout << "Expected number of guesses: " << result.first << ", best guess: " << wordList[result.second] << endl;
 	}
 
@@ -411,7 +382,6 @@ public:
 
 private:
 	vector<string> wordList;
-	vector<double> wordStages;
 
 	uint32_t combinations[26] = {};
 	int letterCombinationToBit[26][32] = {};
