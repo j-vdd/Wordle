@@ -61,10 +61,10 @@ public:
 		}
 	}
 
-	// Calculates the 'interior' of a state
-	State simplify(const State& state, vector<int>& possibleSecrets) {
+	// Calculates the 'interior' of a state, given a list containing at least all 'open' sets within it
+	State simplify(const State& state, vector<int>& possibleSecrets, const vector<int>& oldPossibleSecrets) {
 		State result;
-		for (int i = 0; i < wordStates.size(); i++) {
+		for (int i : oldPossibleSecrets) {
 			const State& wordState = wordStates[i];
 			if ((state & wordState) == wordState) {
 				possibleSecrets.push_back(i);
@@ -148,14 +148,14 @@ public:
 		return result;
 	}
 
-	pair<double, int> search(State curState, int guessCount, bool log = false) {
+	pair<double, int> search(State curState, int guessCount, const vector<int>& oldPossibleSecrets, bool log = false) {
 		if (table.count({ curState, guessCount })) {
 			const auto& [entryExpected, entryBest] = table.at({curState, guessCount});
 			return { entryExpected, entryBest };
 		}
 
 		vector<int> possibleSecrets;
-		curState = simplify(curState, possibleSecrets);
+		curState = simplify(curState, possibleSecrets, oldPossibleSecrets);
 		if (table.count({ curState, guessCount })) {
 			const auto& [entryExpected, entryBest] = table.at({ curState, guessCount });
 			return { entryExpected, entryBest };
@@ -229,7 +229,7 @@ public:
 
 				pair<double, int> childResult = secretIdx == guessIdx ? 
 					pair<double, int>{guessCount + 1, guessIdx} : 
-					search(curState & afterGuess, guessCount + 1);
+					search(curState & afterGuess, guessCount + 1, possibleSecrets);
 
 				if (childResult.second == -1) {
 					success = false;
@@ -259,6 +259,7 @@ public:
 
 	void solve(const vector<string>& guesses, const vector<int>& responses) {
 		State curState = 0;
+		vector<int> possibleSecrets;
 		for (int secretIdx = 0; secretIdx < wordList.size(); secretIdx++) {
 			bool success = true;
 			for (int i = 0; i < guesses.size(); i++) {
@@ -271,59 +272,15 @@ public:
 			if (success) {
 				cout << wordList[secretIdx] << " ";
 				curState |= wordStates[secretIdx];
+				possibleSecrets.push_back(secretIdx);
 			}
 		}
 		cout << endl;
 
 		table.clear();
 
-		auto result = search(curState, guesses.size(), true);
+		auto result = search(curState, guesses.size(), possibleSecrets, true);
 		cout << "Expected number of guesses: " << result.first << ", best guess: " << wordList[result.second] << endl;
-	}
-
-	void countStates() {
-		unordered_set<State> states;
-		states.insert(0);
-
-		vector<unordered_set<State>> afterGuesses(wordList.size());
-		for (int secret = 0; secret < wordList.size(); secret++) {
-			for (int guess = 0; guess < wordList.size(); guess++) {
-				afterGuesses[secret].insert(guessState(wordList[guess], wordList[secret]));
-			}
-		}
-
-		stack<pair<State, int>> q;
-		q.push({ defaultState, 0 });
-
-		uint64_t iterations = 0;
-		while (q.size() && states.size() < 1000000) {
-			auto [state, guessCount] = q.top();
-			q.pop();
-
-			iterations++;
-			if (states.count(state))
-				continue;
-
-			vector<int> allowedSecrets;
-			state = simplify(state, allowedSecrets);
-			if (states.count(state))
-				continue;
-
-			states.insert(state);
-			if (states.size() % 200 == 0)
-				cout << "States found: " << states.size() << ", stack size: " << q.size() << ", iterations: " << iterations << endl;
-
-			if (guessCount >= 5)
-				continue;
-
-			for (int secret : allowedSecrets) {
-				const State& secretState = wordStates[secret];
-				for (const State& afterGuess : afterGuesses[secret])
-					q.push({ state & afterGuess, guessCount + 1 });
-			}
-		}
-
-		cout << "Total states found: " << states.size() << " out of " << wordList.size() << " words" << endl;
 	}
 
 	void initCombinations() {
