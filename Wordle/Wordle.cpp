@@ -18,43 +18,41 @@ aaaba
 */
 
 int main() {
-	ifstream stream("answers.txt");
+	ifstream answerStream("answers.txt");
+	ifstream guessStream("allowed.txt");
 
-	vector<string> answers;
+	vector<string> answers, guesses;
 
 	random_device r;
 	auto engine = default_random_engine(r());
-	auto distrib = bernoulli_distribution(0.2);
+	auto distrib = bernoulli_distribution(1.0);
 
 	string line;
-
-	// time: 25s
-
 	int idx = 0;
-	while (getline(stream, line)) {
-		if (/*distrib(r)*/(idx++ % 5) == 0)
+	while (getline(answerStream, line)) {
+		//if (distrib(r))
 			answers.push_back(line);
 	}
 
-	std::mt19937 g(r());
-	std::shuffle(answers.begin(), answers.end(), g);
+	while (getline(guessStream, line)) {
+		//if (distrib(r))
+			guesses.push_back(line);
+	}
 
+	// time: 25s
 	/*
-	67  4754
-	92  21123
-	113 35033
-	117 52520
-	157 149835
-	178 310013
-	198 428634
-
-	190 411742
-	237 932396
+	bot.solve({"realm"}, {0b0000000101});
+	if (idx++ % 5 == 0)
+		answers.push_back(line);
 	*/
 
-	AI bot(answers);
-	bot.solve({"realm"}, {0b0000000101});
-	//bot.solve({"roast", "pried"}, {0b0000000101, 0b0010000100});
+	std::mt19937 g(r());
+	std::shuffle(answers.begin(), answers.end(), g);
+	std::shuffle(guesses.begin(), guesses.end(), g);
+
+	AI bot(answers, guesses);
+	bot.solve({"slate", "drony"}, {0, 0b1000001000});
+	//bot.solve({"arise"}, {0b0000010001});
 
 	/*srand(time(0));
 	int answerIdx = rand() % answers.size();
