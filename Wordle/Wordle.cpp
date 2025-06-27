@@ -27,8 +27,12 @@ int main() {
 	auto distrib = bernoulli_distribution(0.2);
 
 	string line;
+
+	// old: 1:15
+
+	int idx = 0;
 	while (getline(stream, line)) {
-		if (distrib(r))
+		if (/*distrib(r)*/(idx++ % 5) == 0)
 			answers.push_back(line);
 	}
 
