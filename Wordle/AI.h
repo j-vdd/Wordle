@@ -53,9 +53,12 @@ public:
 			defaultState |= state;
 		}
 
-		random_device r;
-		engine = default_random_engine(r());
-		wordDistrib = uniform_int_distribution<int>(0, wordList.size() - 1);
+		afterGuesses = vector<vector<State>>(wordList.size(), vector<State>(wordList.size()));
+		for (int guessIdx = 0; guessIdx < wordList.size(); guessIdx++) {
+			for (int secretIdx = 0; secretIdx < wordList.size(); secretIdx++) {
+				afterGuesses[guessIdx][secretIdx] = guessState(wordList[guessIdx], wordList[secretIdx]);
+			}
+		}
 	}
 
 	// Calculates the 'interior' of a state
@@ -145,7 +148,7 @@ public:
 		return result;
 	}
 
-	pair<double, int> search(State curState, int guessCount, const vector<vector<State>>& afterGuesses, unordered_map<pair<State, int>, tuple<double, int>, hash_pair>& table, bool log = false) {
+	pair<double, int> search(State curState, int guessCount, bool log = false) {
 		if (table.count({ curState, guessCount })) {
 			const auto& [entryExpected, entryBest] = table.at({curState, guessCount});
 			return { entryExpected, entryBest };
@@ -162,16 +165,16 @@ public:
 			cout << "?" << endl;
 			return { 7, -1 };
 		}
+
 		if (possibleSecrets.size() == 1) {
 			table[{curState, guessCount}] = { guessCount + 1, possibleSecrets[0] };
 			return { guessCount + 1, possibleSecrets[0] };
 		}
-		if (possibleSecrets.size() == 2) {
+		else if (possibleSecrets.size() == 2) {
 			table[{curState, guessCount}] = { (double)guessCount + 1.5, possibleSecrets[0] };
 			return { (double)guessCount + 1.5, possibleSecrets[0] };
 		}
-
-		if (guessCount == 5) {
+		else if (guessCount == 5) {
 			table[{curState, guessCount}] = { 7, -1 };
 			return { 7, -1 };
 		}
@@ -190,11 +193,6 @@ public:
 
 			if (frequencies.size() == 1)
 				continue;
-
-			/*if (containsGuess && frequencies.size() == possibleSecrets.size()) {
-				table[{curState, guessCount}] = { (double)guessCount + 2.0 - 1.0 / (double)possibleSecrets.size(), i, stage};
-				return { (double)guessCount + 2.0 - 1.0 / (double)possibleSecrets.size(), i };
-			}*/
 
 			// E = -sum f_i / t * log2(f_i / t)
 			double entropy = 0.0;
@@ -231,7 +229,7 @@ public:
 
 				pair<double, int> childResult = secretIdx == guessIdx ? 
 					pair<double, int>{guessCount + 1, guessIdx} : 
-					search(curState & afterGuess, guessCount + 1, afterGuesses, table);
+					search(curState & afterGuess, guessCount + 1);
 
 				if (childResult.second == -1) {
 					success = false;
@@ -277,16 +275,9 @@ public:
 		}
 		cout << endl;
 
-		vector<vector<State>> afterGuesses(wordList.size(), vector<State>(wordList.size()));
-		for (int guessIdx = 0; guessIdx < wordList.size(); guessIdx++) {
-			for (int secretIdx = 0; secretIdx < wordList.size(); secretIdx++) {
-				afterGuesses[guessIdx][secretIdx] = guessState(wordList[guessIdx], wordList[secretIdx]);
-			}
-		}
+		table.clear();
 
-		unordered_map<pair<State, int>, tuple<double, int>, hash_pair> table;
-
-		auto result = search(curState, guesses.size(), afterGuesses, table, true);
+		auto result = search(curState, guesses.size(), true);
 		cout << "Expected number of guesses: " << result.first << ", best guess: " << wordList[result.second] << endl;
 	}
 
@@ -383,12 +374,12 @@ public:
 private:
 	vector<string> wordList;
 
+	unordered_map<pair<State, int>, tuple<double, int>, hash_pair> table; 
+	vector<vector<State>> afterGuesses;
+
 	uint32_t combinations[26] = {};
 	int letterCombinationToBit[26][32] = {};
 	vector<State> wordStates;
 	State defaultState;
 	State defaultStates[26] = {};
-
-	std::default_random_engine engine;
-	std::uniform_int_distribution<int> wordDistrib;
 };
