@@ -79,11 +79,11 @@ public:
 		}
 
 		afterGuesses = vector<vector<State>>(this->guessList.size(), vector<State>(this->answerList.size()));
-		for (int guessIdx = 0; guessIdx < this->guessList.size(); guessIdx++) {
+		/*for (int guessIdx = 0; guessIdx < this->guessList.size(); guessIdx++) {
 			for (int secretIdx = 0; secretIdx < this->answerList.size(); secretIdx++) {
 				afterGuesses[guessIdx][secretIdx] = guessState(this->guessList[guessIdx], this->answerList[secretIdx]);
 			}
-		}
+		}*/
 	}
 
 	// Calculates the 'interior' of a state, given a list containing at least all 'open' sets within it
@@ -182,6 +182,15 @@ public:
 
 		return result;
 	}
+	State guessState(int guessIdx, int secretIdx) {
+		if (afterGuesses[guessIdx][secretIdx].any())
+			return afterGuesses[guessIdx][secretIdx];
+
+		State result = guessState(guessList[guessIdx], answerList[secretIdx]);
+		afterGuesses[guessIdx][secretIdx] = result;
+
+		return result;
+	}
 
 	pair<double, int> search(State curState, int guessCount, const vector<int>& oldPossibleSecrets, bool log = false) {
 		if (table.count({ curState, guessCount })) {
@@ -216,7 +225,7 @@ public:
 			bool containsGuess = false;
 			unordered_map<State, int> frequencies;
 			for (int secretIdx : possibleSecrets) {
-				const State& afterGuess = afterGuesses[i][secretIdx];
+				const State& afterGuess = guessState(i, secretIdx); //afterGuesses[i][secretIdx];
 				frequencies[curState & afterGuess]++;
 
 				if (secretIdx == i)
@@ -240,9 +249,6 @@ public:
 
 		int progress = 0;
 		for (auto [score, guessIdx] : possibleGuesses) {
-			if (progress > 50)
-				break;
-
 			double expected = 0;
 
 			bool success = true;
@@ -251,7 +257,7 @@ public:
 			int secretsLeft = possibleSecrets.size();
 			for (int secretIdx : possibleSecrets) {
 				const State& secret = answerStates[secretIdx];
-				const State& afterGuess = afterGuesses[guessIdx][secretIdx];
+				const State& afterGuess = guessState(guessIdx, secretIdx);
 
 				pair<double, int> childResult = secretIdx == guessIdx ? 
 					pair<double, int>{guessCount + 1, guessIdx} : 

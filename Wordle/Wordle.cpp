@@ -38,6 +38,7 @@ int main() {
 		//if (distrib(r))
 			guesses.push_back(line);
 	}
+	
 
 	// time: 25s
 	/*
@@ -51,7 +52,7 @@ int main() {
 	std::shuffle(guesses.begin(), guesses.end(), g);
 
 	AI bot(answers, guesses);
-	bot.solve({"slate", "drony"}, {0, 0b1000001000});
+	bot.solve({ "slate" }, {0b1001010100});
 	//bot.solve({"arise"}, {0b0000010001});
 
 	/*srand(time(0));
