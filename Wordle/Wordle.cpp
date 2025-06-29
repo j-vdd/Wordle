@@ -52,7 +52,9 @@ int main() {
 	std::shuffle(guesses.begin(), guesses.end(), g);
 
 	AI bot(answers, guesses);
-	bot.solve({ "slate" }, {0b1001010100});
+	bot.solve({}, {});
+	//bot.solve({ "slate" }, {0});
+	//bot.solve({ "slate" }, {0b0001000010});
 	//bot.solve({"arise"}, {0b0000010001});
 
 	/*srand(time(0));

@@ -193,11 +193,6 @@ public:
 	}
 
 	pair<double, int> search(State curState, int guessCount, const vector<int>& oldPossibleSecrets, bool log = false) {
-		if (table.count({ curState, guessCount })) {
-			const auto& [entryExpected, entryBest] = table.at({curState, guessCount});
-			return { entryExpected, entryBest };
-		}
-
 		vector<int> possibleSecrets;
 		curState = simplify(curState, possibleSecrets, oldPossibleSecrets);
 		if (table.count({ curState, guessCount })) {
@@ -225,8 +220,11 @@ public:
 			bool containsGuess = false;
 			unordered_map<State, int> frequencies;
 			for (int secretIdx : possibleSecrets) {
-				const State& afterGuess = guessState(i, secretIdx); //afterGuesses[i][secretIdx];
-				frequencies[curState & afterGuess]++;
+				const State& afterGuess = guessState(i, secretIdx);
+				if (guessCount == 0)
+					frequencies[curState & afterGuess]++;
+				else
+					frequencies[simplify(curState & afterGuess, possibleSecrets)]++;
 
 				if (secretIdx == i)
 					containsGuess = true;
@@ -235,20 +233,32 @@ public:
 			if (frequencies.size() == 1)
 				continue;
 
+			if (guessCount > 0 && frequencies.size() == possibleSecrets.size() && containsGuess) {
+				table[{curState, guessCount}] = { double(guessCount + 2) - 1.0 / double(possibleSecrets.size()), i };
+				return { double(guessCount + 2) - 1.0 / double(possibleSecrets.size()), i };
+			}
+			else if (guessCount > 0 && frequencies.size() == possibleSecrets.size() && i > possibleSecrets.back()) {
+				table[{curState, guessCount}] = { double(guessCount + 2), i };
+				return { double(guessCount + 2), i };
+			}
+
 			// E = -sum f_i / t * log2(f_i / t)
 			double entropy = 0.0;
 			for (const auto& [s, f] : frequencies)
-				entropy -= f * log2(f / (double)possibleSecrets.size());
+				entropy -= f / (double)possibleSecrets.size() * log2(f / (double)possibleSecrets.size());
 
 			possibleGuesses.push_back({ -entropy, i });
-		}
 
+			if (log && (i % 20 == 0 || i == guessList.size() - 1))
+				cout << "Initializing: " << 100.0 * double(i + 1) / double(guessList.size()) << "%" << endl;
+		}
+		
 		sort(possibleGuesses.begin(), possibleGuesses.end());
 
 		pair<double, int> result = { 7, -1 };
 
 		int progress = 0;
-		for (auto [score, guessIdx] : possibleGuesses) {
+		for (const auto& [score, guessIdx] : possibleGuesses) {
 			double expected = 0;
 
 			bool success = true;
@@ -293,8 +303,7 @@ public:
 					cout << endl;
 			}
 
-			double optimal = double(guessCount + 2) - 1.0 / double(possibleSecrets.size());
-			if (abs(result.first - optimal) < 0.00001)
+			if (progress >= 35)
 				break;
 		}
 
