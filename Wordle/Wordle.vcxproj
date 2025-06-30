@@ -136,7 +136,10 @@
   </ItemGroup>
   <ItemGroup>
     <Text Include="allowed.txt" />
+    <Text Include="allowedSmall.txt" />
     <Text Include="answers.txt" />
+    <Text Include="frequency-alpha-alldicts.txt" />
+    <Text Include="frequency5.txt" />
     <Text Include="test.txt" />
     <Text Include="test2.txt" />
   </ItemGroup>

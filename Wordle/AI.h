@@ -29,9 +29,6 @@ struct hash_pair{
 
 class AI {
 public:
-	static const int STATE_SIZE = 390;
-	typedef bitset<STATE_SIZE> State;
-
 	AI(const vector<string>& answerList, const vector<string>& guessList) {
 		this->answerList = answerList;
 
@@ -45,70 +42,14 @@ public:
 				this->guessList.push_back(guess);
 		}
 
-		initCombinations(this->guessList);
+		hashes.assign(this->guessList.size(), 0);
 
-		for (const string& word : this->answerList) {
-			State state;
-			for (int i = 0; i < 26; i++) {
-				int mask = 0;
-				for (int j = 0; j < 5; j++) {
-					if (word[j] - 'a' == i)
-						mask |= 1 << j;
-				}
+		mt19937 g(123412);
 
-				state.set(letterCombinationToBit[i][mask]);
-				defaultStates[i].set(letterCombinationToBit[i][mask]);
-			}
-
-			answerStates.push_back(state);
-			defaultState |= state;
+		auto hashEngine = uniform_int_distribution<uint64_t>();
+		for (int i = 0; i < this->guessList.size(); i++) {
+			hashes[i] = hashEngine(g);
 		}
-		for (const string& word : this->guessList) {
-			State state;
-			for (int i = 0; i < 26; i++) {
-				int mask = 0;
-				for (int j = 0; j < 5; j++) {
-					if (word[j] - 'a' == i)
-						mask |= 1 << j;
-				}
-
-				state.set(letterCombinationToBit[i][mask]);
-			}
-
-			guessStates.push_back(state);
-		}
-
-		afterGuesses = vector<vector<State>>(this->guessList.size(), vector<State>(this->answerList.size()));
-		/*for (int guessIdx = 0; guessIdx < this->guessList.size(); guessIdx++) {
-			for (int secretIdx = 0; secretIdx < this->answerList.size(); secretIdx++) {
-				afterGuesses[guessIdx][secretIdx] = guessState(this->guessList[guessIdx], this->answerList[secretIdx]);
-			}
-		}*/
-	}
-
-	// Calculates the 'interior' of a state, given a list containing at least all 'open' sets within it
-	State simplify(const State& state, vector<int>& possibleSecrets, const vector<int>& oldPossibleSecrets) {
-		State result;
-		for (int i : oldPossibleSecrets) {
-			const State& wordState = answerStates[i];
-			if ((state & wordState) == wordState) {
-				possibleSecrets.push_back(i);
-
-				result |= wordState;
-			}
-		}
-
-		return result;
-	}
-	State simplify(const State& state, const vector<int>& oldPossibleSecrets) {
-		State result;
-		for (int i : oldPossibleSecrets) {
-			const State& wordState = answerStates[i];
-			if ((state & wordState) == wordState)
-				result |= wordState;
-		}
-
-		return result;
 	}
 
 	static const int WON = 0b1010101010;
@@ -135,66 +76,11 @@ public:
 		return result;
 	}
 
-	State guessState(const string& guess, const string& secret) {
-		State result = 0;
-
-		for (int i = 0; i < 26; i++) {
-			int secretFreq = 0;
-			int secretMask = 0;
-			int guessFreq = 0;
-			int guessMask = 0;
-			for (int j = 0; j < 5; j++) {
-				if (guess[j] - 'a' == i) {
-					guessFreq++;
-					guessMask |= 1 << j;
-				}
-				if (secret[j] - 'a' == i) {
-					secretFreq++;
-					secretMask |= 1 << j;
-				}
-			}
-
-			if (guessFreq == 0) {
-				result |= defaultStates[i];
-				continue;
-			}
-
-			int mustHave = guessMask & secretMask;
-			int mustNotHave = guessMask & ~secretMask;
-			for (int j = 0; j < 32; j++) {
-				if ((combinations[i] & (1 << j)) == 0)
-					continue;
-
-				int popCount = 0;
-				for (int k = 0; k < 5; k++)
-					popCount += bool(j & (1 << k));
-
-				if (guessFreq <= secretFreq) {
-					if ((j & mustHave) == mustHave && (j & mustNotHave) == 0 && popCount >= guessFreq)
-						result.set(letterCombinationToBit[i][j]);
-				}
-				else {
-					if ((j & mustHave) == mustHave && (j & mustNotHave) == 0 && popCount == secretFreq)
-						result.set(letterCombinationToBit[i][j]);
-				}
-			}
-		}
-
-		return result;
-	}
-	State guessState(int guessIdx, int secretIdx) {
-		if (afterGuesses[guessIdx][secretIdx].any())
-			return afterGuesses[guessIdx][secretIdx];
-
-		State result = guessState(guessList[guessIdx], answerList[secretIdx]);
-		afterGuesses[guessIdx][secretIdx] = result;
-
-		return result;
+	static bool sizeCmp(const pair<uint64_t, vector<int>>& a, const pair<uint64_t, vector<int>>& b) {
+		return a.second.size() < b.second.size();
 	}
 
-	pair<double, int> search(State curState, int guessCount, const vector<int>& oldPossibleSecrets, bool log = false) {
-		vector<int> possibleSecrets;
-		curState = simplify(curState, possibleSecrets, oldPossibleSecrets);
+	pair<double, int> search(uint64_t curState, int guessCount, const vector<int>& possibleSecrets, bool log = false) {
 		if (table.count({ curState, guessCount })) {
 			const auto& [entryExpected, entryBest] = table.at({ curState, guessCount });
 			return { entryExpected, entryBest };
@@ -215,76 +101,90 @@ public:
 			return { 7, -1 };
 		}
 
-		vector<pair<double, int>> possibleGuesses;
+		vector<tuple<int, double, vector<pair<uint64_t, vector<int>>>>> guessInformation;
+		vector<tuple<double, int, bool>> possibleGuesses;
+
 		for (int i = 0; i < guessList.size(); i++) {
 			bool containsGuess = false;
-			unordered_map<State, int> frequencies;
+			unordered_map<uint64_t, pair<uint64_t, vector<int>>> partitionMap;
 			for (int secretIdx : possibleSecrets) {
-				const State& afterGuess = guessState(i, secretIdx);
-				if (guessCount == 0)
-					frequencies[curState & afterGuess]++;
-				else
-					frequencies[simplify(curState & afterGuess, possibleSecrets)]++;
+				int guessResult = guess(guessList[i], answerList[secretIdx]);
+				partitionMap[guessResult].second.push_back(secretIdx);
+				partitionMap[guessResult].first ^= hashes[secretIdx];
 
 				if (secretIdx == i)
 					containsGuess = true;
 			}
 
-			if (frequencies.size() == 1)
+			if (partitionMap.size() == 1)
 				continue;
 
-			if (guessCount > 0 && frequencies.size() == possibleSecrets.size() && containsGuess) {
+			if (partitionMap.size() == possibleSecrets.size() && containsGuess) {
 				table[{curState, guessCount}] = { double(guessCount + 2) - 1.0 / double(possibleSecrets.size()), i };
 				return { double(guessCount + 2) - 1.0 / double(possibleSecrets.size()), i };
 			}
-			else if (guessCount > 0 && frequencies.size() == possibleSecrets.size() && i > possibleSecrets.back()) {
+			else if (partitionMap.size() == possibleSecrets.size() && i > possibleSecrets.back()) {
 				table[{curState, guessCount}] = { double(guessCount + 2), i };
 				return { double(guessCount + 2), i };
 			}
 
+			vector<pair<uint64_t, vector<int>>> partition;
+
 			// E = -sum f_i / t * log2(f_i / t)
 			double entropy = 0.0;
-			for (const auto& [s, f] : frequencies)
+			double lowerBound = 0.0;
+			for (const auto& [s, part] : partitionMap) {
+				int f = part.second.size();
+				lowerBound += double(guessCount + 2) + double(f - 1) * double(guessCount + 3);
 				entropy -= f / (double)possibleSecrets.size() * log2(f / (double)possibleSecrets.size());
 
-			possibleGuesses.push_back({ -entropy, i });
+				partition.push_back(part);
+			}
+			if (containsGuess)
+				lowerBound--;
 
-			if (log && (i % 20 == 0 || i == guessList.size() - 1))
+			sort(partition.begin(), partition.end(), sizeCmp);
+
+			possibleGuesses.push_back({ -entropy, guessInformation.size(), containsGuess });
+			guessInformation.push_back({ i, lowerBound, partition });
+
+			if (log && (i % 100 == 0 || i == guessList.size() - 1))
 				cout << "Initializing: " << 100.0 * double(i + 1) / double(guessList.size()) << "%" << endl;
 		}
-		
+
 		sort(possibleGuesses.begin(), possibleGuesses.end());
 
 		pair<double, int> result = { 7, -1 };
 
 		int progress = 0;
-		for (const auto& [score, guessIdx] : possibleGuesses) {
+		for (const auto& [score, idx, containsGuess] : possibleGuesses) {
+			const auto& [guessIdx, lb, partition] = guessInformation[idx];
+			double lowerBound = lb;
 			double expected = 0;
 
+			// secret is the guessed word
+			if (containsGuess) {
+				lowerBound -= double(guessCount + 1);
+				expected += double(guessCount + 1) / double(possibleSecrets.size());
+			}
+
 			bool success = true;
-			bool hasGuessedSecret = false;
+			for (const pair<uint64_t, vector<int>>& part : partition) {
+				if (part.second.size() == 1 && part.second[0] == guessIdx) {
+					continue;
+				}
 
-			int secretsLeft = possibleSecrets.size();
-			for (int secretIdx : possibleSecrets) {
-				const State& secret = answerStates[secretIdx];
-				const State& afterGuess = guessState(guessIdx, secretIdx);
-
-				pair<double, int> childResult = secretIdx == guessIdx ? 
-					pair<double, int>{guessCount + 1, guessIdx} : 
-					search(curState & afterGuess, guessCount + 1, possibleSecrets);
-
-				if (secretIdx == guessIdx)
-					hasGuessedSecret = true;
-
+				pair<double, int> childResult = search(part.first, guessCount + 1, part.second);
 				if (childResult.second == -1) {
 					success = false;
 					break;
 				}
 
-				expected += childResult.first / double(possibleSecrets.size());
-				secretsLeft--;
+				int f = part.second.size();
+				lowerBound -= double(guessCount + 2) + double(f - 1) * double(guessCount + 3);
+				expected += double(f) * childResult.first / double(possibleSecrets.size());
 
-				double minExpected = expected + double(secretsLeft * (guessCount + 2) - 1 + hasGuessedSecret) / double(possibleSecrets.size());
+				double minExpected = expected + lowerBound / double(possibleSecrets.size());
 				if (minExpected >= result.first - 0.00001) {
 					success = false;
 					break;
@@ -303,8 +203,8 @@ public:
 					cout << endl;
 			}
 
-			if (progress >= 35)
-				break;
+			/*if (progress > 80)
+				break;*/
 		}
 
 		table[{curState, guessCount}] = { result.first, result.second };
@@ -312,7 +212,8 @@ public:
 	}
 
 	void solve(const vector<string>& guesses, const vector<int>& responses) {
-		State curState = 0;
+		uint64_t hash = 0;
+
 		vector<int> possibleSecrets;
 		for (int secretIdx = 0; secretIdx < answerList.size(); secretIdx++) {
 			bool success = true;
@@ -325,7 +226,7 @@ public:
 
 			if (success) {
 				cout << answerList[secretIdx] << " ";
-				curState |= answerStates[secretIdx];
+				hash ^= hashes[secretIdx];
 				possibleSecrets.push_back(secretIdx);
 			}
 		}
@@ -333,66 +234,15 @@ public:
 
 		table.clear();
 
-		auto result = search(curState, guesses.size(), possibleSecrets, true);
+		auto result = search(hash, guesses.size(), possibleSecrets, true);
 		cout << "Expected number of guesses: " << result.first << ", best guess: " << guessList[result.second] << endl;
-	}
-
-	void initCombinations(const vector<string>& wordList) {
-		for (const string& word : wordList) {
-			for (int i = 0; i < 26; i++) {
-				uint8_t mask = 0;
-				for (int j = 0; j < 5; j++) {
-					if (word[j] - 'a' == i)
-						mask |= 1 << j;
-				}
-
-				combinations[i] |= 1 << mask;
-			}
-		}
-
-		int idx = 0;
-		for (int i = 0; i < 26; i++) {
-			int total = 0;
-			for (int j = 0; j < 32; j++) {
-				if ((combinations[i] & (1 << j)) == 0) {
-					letterCombinationToBit[i][j] = -1;
-					continue;
-				}
-
-				letterCombinationToBit[i][j] = idx++;
-
-				total++;
-				for (int k = 0; k < 5; k++) {
-					if (j & (1 << k))
-						cout << char('a' + i);
-					else
-						cout << '.';
-				}
-				cout << " ";
-			}
-			cout << endl;
-			cout << total << '\n' << endl;
-		}
-
-		cout << "Sum: " << idx << endl;
-
-		if (idx > STATE_SIZE) {
-			cout << "Sum is too large, change state size!" << endl;
-		}
 	}
 
 private:
 	vector<string> answerList;
 	vector<string> guessList;
 
-	unordered_map<pair<State, int>, tuple<double, int>, hash_pair> table; 
-	vector<vector<State>> afterGuesses;
+	unordered_map<pair<uint64_t, int>, tuple<double, int>, hash_pair> table; 
 
-	uint32_t combinations[26] = {};
-	int letterCombinationToBit[26][32] = {};
-	vector<State> answerStates;
-	vector<State> guessStates;
-
-	State defaultState;
-	State defaultStates[26] = {};
+	vector<uint64_t> hashes;
 };
