@@ -97,7 +97,7 @@ int main() {
 	return 0;*/
 
 	ifstream answerStream("answers.txt");
-	ifstream guessStream("allowedSmall.txt");
+	ifstream guessStream("allowed.txt");
 
 	vector<string> answers, guesses;
 
@@ -130,7 +130,7 @@ int main() {
 	std::shuffle(guesses.begin(), guesses.end(), g);
 
 	AI bot(answers, guesses);
-	bot.solve({"salet", "pinko"}, {0b0100000010, 0b0001000000});
+	bot.solve({"tarse"}, {0});
 
 	//bot.solve({ "slate" }, {0b0001000010});
 	//bot.solve({"arise"}, {0b0000010001});

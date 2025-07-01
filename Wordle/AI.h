@@ -31,6 +31,7 @@ class AI {
 public:
 	AI(const vector<string>& answerList, const vector<string>& guessList) {
 		this->answerList = answerList;
+		this->answerProbabilities = vector<double>(answerList.size(), 1.0 / (double)answerList.size());
 
 		unordered_set<string> answerSet;
 		for (const string& answer : answerList)
@@ -106,18 +107,30 @@ public:
 
 		for (int i = 0; i < guessList.size(); i++) {
 			bool containsGuess = false;
-			unordered_map<uint64_t, pair<uint64_t, vector<int>>> partitionMap;
+
+			guessInformation.push_back({});
+			auto& partition = get<2>(guessInformation.back());
+
+			unordered_map<uint64_t, int> partitionMap;
 			for (int secretIdx : possibleSecrets) {
 				int guessResult = guess(guessList[i], answerList[secretIdx]);
-				partitionMap[guessResult].second.push_back(secretIdx);
-				partitionMap[guessResult].first ^= hashes[secretIdx];
+				if (partitionMap.count(guessResult) == 0) {
+					partitionMap[guessResult] = partition.size();
+					partition.push_back(pair<uint64_t, vector<int>>{ 0, {} });
+				}
+
+				int idx = partitionMap[guessResult];
+				partition[idx].second.push_back(secretIdx);
+				partition[idx].first ^= hashes[secretIdx];
 
 				if (secretIdx == i)
 					containsGuess = true;
 			}
 
-			if (partitionMap.size() == 1)
+			if (partitionMap.size() == 1) {
+				guessInformation.pop_back();
 				continue;
+			}
 
 			if (partitionMap.size() == possibleSecrets.size() && containsGuess) {
 				table[{curState, guessCount}] = { double(guessCount + 2) - 1.0 / double(possibleSecrets.size()), i };
@@ -128,25 +141,24 @@ public:
 				return { double(guessCount + 2), i };
 			}
 
-			vector<pair<uint64_t, vector<int>>> partition;
-
 			// E = -sum f_i / t * log2(f_i / t)
 			double entropy = 0.0;
 			double lowerBound = 0.0;
-			for (const auto& [s, part] : partitionMap) {
-				int f = part.second.size();
+			for (const auto& [s, part] : partition) {
+				int f = part.size();
 				lowerBound += double(guessCount + 2) + double(f - 1) * double(guessCount + 3);
 				entropy -= f / (double)possibleSecrets.size() * log2(f / (double)possibleSecrets.size());
 
-				partition.push_back(part);
 			}
 			if (containsGuess)
 				lowerBound--;
 
 			sort(partition.begin(), partition.end(), sizeCmp);
 
-			possibleGuesses.push_back({ -entropy, guessInformation.size(), containsGuess });
-			guessInformation.push_back({ i, lowerBound, partition });
+			possibleGuesses.push_back({ -entropy, guessInformation.size() - 1, containsGuess });
+
+			get<0>(guessInformation.back()) = i;
+			get<1>(guessInformation.back()) = lowerBound;
 
 			if (log && (i % 100 == 0 || i == guessList.size() - 1))
 				cout << "Initializing: " << 100.0 * double(i + 1) / double(guessList.size()) << "%" << endl;
@@ -203,7 +215,7 @@ public:
 					cout << endl;
 			}
 
-			/*if (progress > 80)
+			/*if (progress > 200)
 				break;*/
 		}
 
@@ -240,6 +252,7 @@ public:
 
 private:
 	vector<string> answerList;
+	vector<double> answerProbabilities;
 	vector<string> guessList;
 
 	unordered_map<pair<uint64_t, int>, tuple<double, int>, hash_pair> table; 
