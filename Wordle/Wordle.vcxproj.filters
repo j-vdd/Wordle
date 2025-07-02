@@ -27,6 +27,7 @@
     <Text Include="allowedSmall.txt" />
     <Text Include="frequency-alpha-alldicts.txt" />
     <Text Include="frequency5.txt" />
+    <Text Include="pastSolutions.txt" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Game.h">

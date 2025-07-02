@@ -29,9 +29,21 @@ struct hash_pair{
 
 class AI {
 public:
-	AI(const vector<string>& answerList, const vector<string>& guessList) {
+	AI(const vector<string>& answerList, const vector<string>& guessList, const vector<uint64_t>& frequencyList) {
 		this->answerList = answerList;
-		this->answerProbabilities = vector<double>(answerList.size(), 1.0 / (double)answerList.size());
+		if (frequencyList.size() == 0) {
+			this->answerProbabilities = vector<double>(answerList.size(), 1.0 / (double)answerList.size());
+		}
+		else {
+			this->answerProbabilities = vector<double>(answerList.size());
+			uint64_t totalFreq = 0;
+			for (uint64_t freq : frequencyList)
+				totalFreq += freq;
+
+			for (int i = 0; i < answerList.size(); i++) {
+				this->answerProbabilities[i] = double(frequencyList[i]) / double(totalFreq);
+			}
+		}
 
 		unordered_set<string> answerSet;
 		for (const string& answer : answerList)
@@ -77,8 +89,15 @@ public:
 		return result;
 	}
 
-	static bool sizeCmp(const pair<uint64_t, vector<int>>& a, const pair<uint64_t, vector<int>>& b) {
-		return a.second.size() < b.second.size();
+	struct PartitionSegment {
+		uint64_t hash = 0;
+		double probability = 0.0;
+		double maxProbability = 0.0;
+		vector<int> wordIndices = {};
+	};
+
+	static bool sizeCmp(const PartitionSegment& a, const PartitionSegment& b) {
+		return a.wordIndices.size() < b.wordIndices.size();
 	}
 
 	pair<double, int> search(uint64_t curState, int guessCount, const vector<int>& possibleSecrets, bool log = false) {
@@ -93,16 +112,25 @@ public:
 		}
 
 		if (possibleSecrets.size() <= 2) {
-			int n = possibleSecrets.size();
-			table[{curState, guessCount}] = { (double)guessCount + (2.0 * double(n - 1) + 1.0) / double(n), possibleSecrets[0]};
-			return { (double)guessCount + (2.0 * double(n - 1) + 1.0) / double(n), possibleSecrets[0] };
+			double pSum = 0.0;
+			double pMax = 0.0;
+			for (int secretIdx : possibleSecrets) {
+				pSum += answerProbabilities[secretIdx];
+				pMax = max(pMax, answerProbabilities[secretIdx]);
+			}
+			pMax /= pSum;
+
+			double expected = pMax * double(guessCount + 1) + (1.0 - pMax) * double(guessCount + 2);
+
+			table[{curState, guessCount}] = { expected, possibleSecrets[0]};
+			return { expected, possibleSecrets[0] };
 		}
 		else if (guessCount == 5) {
 			table[{curState, guessCount}] = { 7, -1 };
 			return { 7, -1 };
 		}
 
-		vector<tuple<int, double, vector<pair<uint64_t, vector<int>>>>> guessInformation;
+		vector<tuple<int, double, vector<PartitionSegment>>> guessInformation;
 		vector<tuple<double, int, bool>> possibleGuesses;
 
 		for (int i = 0; i < guessList.size(); i++) {
@@ -112,16 +140,21 @@ public:
 			auto& partition = get<2>(guessInformation.back());
 
 			unordered_map<uint64_t, int> partitionMap;
+			double probabilitySum = 0.0;
 			for (int secretIdx : possibleSecrets) {
 				int guessResult = guess(guessList[i], answerList[secretIdx]);
 				if (partitionMap.count(guessResult) == 0) {
 					partitionMap[guessResult] = partition.size();
-					partition.push_back(pair<uint64_t, vector<int>>{ 0, {} });
+					partition.emplace_back();//push_back(pair<uint64_t, vector<int>>{ 0, {} });
 				}
 
 				int idx = partitionMap[guessResult];
-				partition[idx].second.push_back(secretIdx);
-				partition[idx].first ^= hashes[secretIdx];
+				partition[idx].wordIndices.push_back(secretIdx);
+				partition[idx].hash ^= hashes[secretIdx];
+				partition[idx].probability += answerProbabilities[secretIdx];
+				partition[idx].maxProbability = max(partition[idx].maxProbability, answerProbabilities[secretIdx]);
+
+				probabilitySum += answerProbabilities[secretIdx];
 
 				if (secretIdx == i)
 					containsGuess = true;
@@ -133,8 +166,11 @@ public:
 			}
 
 			if (partitionMap.size() == possibleSecrets.size() && containsGuess) {
-				table[{curState, guessCount}] = { double(guessCount + 2) - 1.0 / double(possibleSecrets.size()), i };
-				return { double(guessCount + 2) - 1.0 / double(possibleSecrets.size()), i };
+				double pGuess = answerProbabilities[i] / probabilitySum;
+				double expected = pGuess * double(guessCount + 1) + (1.0 - pGuess) * double(guessCount + 2);
+
+				table[{curState, guessCount}] = { expected, i };
+				return { expected, i };
 			}
 			else if (partitionMap.size() == possibleSecrets.size() && i > possibleSecrets.back()) {
 				table[{curState, guessCount}] = { double(guessCount + 2), i };
@@ -144,14 +180,15 @@ public:
 			// E = -sum f_i / t * log2(f_i / t)
 			double entropy = 0.0;
 			double lowerBound = 0.0;
-			for (const auto& [s, part] : partition) {
-				int f = part.size();
-				lowerBound += double(guessCount + 2) + double(f - 1) * double(guessCount + 3);
-				entropy -= f / (double)possibleSecrets.size() * log2(f / (double)possibleSecrets.size());
+			for (auto& segment : partition) {
+				segment.probability /= probabilitySum;
+				segment.maxProbability /= probabilitySum;
 
+				lowerBound += segment.maxProbability * double(guessCount + 2) + (segment.probability - segment.maxProbability) * double(guessCount + 3);
+				entropy -= segment.probability * log2(segment.probability);
 			}
 			if (containsGuess)
-				lowerBound--;
+				lowerBound -= 1.0 / double(possibleSecrets.size());
 
 			sort(partition.begin(), partition.end(), sizeCmp);
 
@@ -174,29 +211,25 @@ public:
 			double lowerBound = lb;
 			double expected = 0;
 
-			// secret is the guessed word
-			if (containsGuess) {
-				lowerBound -= double(guessCount + 1);
-				expected += double(guessCount + 1) / double(possibleSecrets.size());
-			}
-
 			bool success = true;
-			for (const pair<uint64_t, vector<int>>& part : partition) {
-				if (part.second.size() == 1 && part.second[0] == guessIdx) {
+			for (const PartitionSegment& part : partition) {
+				if (part.wordIndices.size() == 1 && part.wordIndices[0] == guessIdx) {
+					lowerBound -= part.probability * double(guessCount + 1);
+					expected += part.probability * double(guessCount + 1);
 					continue;
 				}
 
-				pair<double, int> childResult = search(part.first, guessCount + 1, part.second);
+				pair<double, int> childResult = search(part.hash, guessCount + 1, part.wordIndices);
 				if (childResult.second == -1) {
 					success = false;
 					break;
 				}
 
-				int f = part.second.size();
-				lowerBound -= double(guessCount + 2) + double(f - 1) * double(guessCount + 3);
-				expected += double(f) * childResult.first / double(possibleSecrets.size());
+				int f = part.wordIndices.size();
+				lowerBound -= part.maxProbability * double(guessCount + 2) + (part.probability - part.maxProbability) * double(guessCount + 3);
+				expected += part.probability * childResult.first;
 
-				double minExpected = expected + lowerBound / double(possibleSecrets.size());
+				double minExpected = expected + lowerBound;
 				if (minExpected >= result.first - 0.00001) {
 					success = false;
 					break;
@@ -215,7 +248,7 @@ public:
 					cout << endl;
 			}
 
-			/*if (progress > 200)
+			/*if (progress > 10)
 				break;*/
 		}
 

@@ -140,6 +140,7 @@
     <Text Include="answers.txt" />
     <Text Include="frequency-alpha-alldicts.txt" />
     <Text Include="frequency5.txt" />
+    <Text Include="pastSolutions.txt" />
     <Text Include="test.txt" />
     <Text Include="test2.txt" />
   </ItemGroup>
